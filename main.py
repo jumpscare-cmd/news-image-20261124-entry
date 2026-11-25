@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Draw the front page of THE WORLD TODAY for Tuesday, 24 November 2026.
+"""Draw a newspaper front page summing up Wednesday, 25 November 2026.
 
-Standard library only. No network, no randomness, no timestamps.
-Deterministic: running twice produces byte-identical output.
+Pure Python 3 standard library. No network, no randomness, no timestamps.
+Deterministic: running it twice produces byte-identical output.
+
+Usage: python3 main.py [output-path]
+  Output goes to the first argument, else $MAKEFUN_OUTPUT_DIR/entry.png,
+  else entry.png next to this file.
 """
+
 import hashlib
-import math
 import os
 import struct
 import sys
@@ -13,15 +17,15 @@ import zlib
 
 W, H = 1024, 1024
 
-PAPER = (247, 243, 232)
-INK = (17, 17, 17)
+PAPER = (248, 243, 230)
+INK = (20, 20, 20)
 RED = (163, 22, 33)
-NAVY = (26, 58, 92)
+BLUE = (29, 53, 87)
 GREY = (90, 86, 78)
-LIGHT = (232, 226, 210)
+LIGHT = (226, 219, 203)
 
 # ---------------------------------------------------------------- 5x7 font
-# Each glyph: 7 rows of 5 characters, '#' = ink.
+# Each glyph: 7 strings of 5 chars, '#' = ink, '.' = blank.
 FONT = {
     'A': ("01110", "10001", "10001", "11111", "10001", "10001", "10001"),
     'B': ("11110", "10001", "10001", "11110", "10001", "10001", "11110"),
@@ -45,7 +49,7 @@ FONT = {
     'T': ("11111", "00100", "00100", "00100", "00100", "00100", "00100"),
     'U': ("10001", "10001", "10001", "10001", "10001", "10001", "01110"),
     'V': ("10001", "10001", "10001", "10001", "10001", "01010", "00100"),
-    'W': ("10001", "10001", "10001", "10101", "10101", "10101", "01010"),
+    'W': ("10001", "10001", "10001", "10101", "10101", "11011", "10001"),
     'X': ("10001", "10001", "01010", "00100", "01010", "10001", "10001"),
     'Y': ("10001", "10001", "01010", "00100", "00100", "00100", "00100"),
     'Z': ("11111", "00001", "00010", "00100", "01000", "10000", "11111"),
@@ -58,7 +62,7 @@ FONT = {
     'g': ("00000", "01111", "10001", "10001", "01111", "00001", "01110"),
     'h': ("10000", "10000", "11110", "10001", "10001", "10001", "10001"),
     'i': ("00100", "00000", "01100", "00100", "00100", "00100", "01110"),
-    'j': ("00010", "00000", "00110", "00010", "00010", "00010", "01100"),
+    'j': ("00010", "00000", "00110", "00010", "00010", "00010", "00110"),
     'k': ("10000", "10000", "10010", "10100", "11000", "10100", "10010"),
     'l': ("01100", "00100", "00100", "00100", "00100", "00100", "01110"),
     'm': ("00000", "00000", "11010", "10101", "10101", "10101", "10101"),
@@ -90,48 +94,22 @@ FONT = {
     ',': ("00000", "00000", "00000", "00000", "01100", "00100", "01000"),
     ':': ("00000", "01100", "01100", "00000", "01100", "01100", "00000"),
     ';': ("00000", "01100", "01100", "00000", "01100", "00100", "01000"),
-    "'": ("00100", "00100", "01000", "00000", "00000", "00000", "00000"),
-    '"': ("01010", "01010", "00000", "00000", "00000", "00000", "00000"),
     '!': ("00100", "00100", "00100", "00100", "00100", "00000", "00100"),
-    '?': ("01110", "10001", "00001", "00010", "00100", "00000", "00100"),
+    '?': ("01110", "10001", "00001", "00110", "00100", "00000", "00100"),
+    "'": ("00100", "00100", "01000", "00000", "00000", "00000", "00000"),
     '-': ("00000", "00000", "00000", "01110", "00000", "00000", "00000"),
-    '\u2014': ("00000", "00000", "00000", "11111", "00000", "00000", "00000"),
     '(': ("00010", "00100", "01000", "01000", "01000", "00100", "00010"),
     ')': ("01000", "00100", "00010", "00010", "00010", "00100", "01000"),
     '/': ("00001", "00010", "00010", "00100", "01000", "01000", "10000"),
+    '"': ("01010", "01010", "00000", "00000", "00000", "00000", "00000"),
     '&': ("01100", "10010", "10100", "01000", "10101", "10010", "01101"),
     '%': ("11001", "11010", "00010", "00100", "01000", "01011", "10011"),
+    '$': ("00100", "01111", "10100", "01110", "00101", "11110", "00100"),
     '+': ("00000", "00100", "00100", "11111", "00100", "00100", "00000"),
     '=': ("00000", "00000", "11111", "00000", "11111", "00000", "00000"),
-    '$': ("00100", "01111", "10100", "01110", "00101", "11110", "00100"),
     '*': ("00000", "10101", "01110", "11111", "01110", "10101", "00000"),
-    '_': ("00000", "00000", "00000", "00000", "00000", "00000", "11111"),
     '#': ("01010", "01010", "11111", "01010", "11111", "01010", "01010"),
-    '<': ("00010", "00100", "01000", "10000", "01000", "00100", "00010"),
-    '>': ("01000", "00100", "00010", "00001", "00010", "00100", "01000"),
 }
-
-
-def text_width(text, scale):
-    return len(text) * 6 * scale - scale
-
-
-def wrap_text(text, scale, max_width):
-    """Greedy word wrap; returns list of lines."""
-    lines = []
-    for para in text.split("\n"):
-        words = para.split(" ")
-        cur = ""
-        for w in words:
-            trial = w if not cur else cur + " " + w
-            if text_width(trial, scale) <= max_width or not cur:
-                cur = trial
-            else:
-                lines.append(cur)
-                cur = w
-        if cur:
-            lines.append(cur)
-    return lines
 
 
 class Canvas:
@@ -160,17 +138,18 @@ class Canvas:
         sx = 1 if x0 < x1 else -1
         sy = 1 if y0 < y1 else -1
         err = dx - dy
+        x, y = x0, y0
         while True:
-            self.set(x0, y0, color)
-            if x0 == x1 and y0 == y1:
-                return
+            self.set(x, y, color)
+            if x == x1 and y == y1:
+                break
             e2 = 2 * err
             if e2 > -dy:
                 err -= dy
-                x0 += sx
+                x += sx
             if e2 < dx:
                 err += dx
-                y0 += sy
+                y += sy
 
     def circle(self, cx, cy, r, color):
         x, y, d = 0, r, 3 - 2 * r
@@ -187,239 +166,212 @@ class Canvas:
             x += 1
 
     def ellipse(self, cx, cy, rx, ry, color):
-        steps = max(8, int(2 * math.pi * max(rx, ry)))
-        for i in range(steps + 1):
-            a = 2 * math.pi * i / steps
+        # Sampled outline: deterministic, no floats in output path beyond this.
+        import math
+        for deg in range(360):
+            a = math.radians(deg)
             self.set(int(cx + rx * math.cos(a)), int(cy + ry * math.sin(a)), color)
 
-    def disc(self, cx, cy, r, color):
-        for yy in range(cy - r, cy + r + 1):
-            for xx in range(cx - r, cx + r + 1):
-                if (xx - cx) ** 2 + (yy - cy) ** 2 <= r * r:
-                    self.set(xx, yy, color)
-
-    def draw_char(self, x, y, ch, scale, color):
-        glyph = FONT.get(ch)
-        if glyph is None:
-            glyph = FONT['?']
-        for row in range(7):
-            bits = glyph[row]
-            for col in range(5):
-                if bits[col] == '1':
-                    self.rect(x + col * scale, y + row * scale, scale, scale, color)
-
-    def draw_text(self, x, y, text, scale, color):
+    def text(self, x, y, s, scale, color):
         cx = x
-        for ch in text:
-            self.draw_char(cx, y, ch, scale, color)
+        for ch in s:
+            glyph = FONT.get(ch, FONT[' '])
+            for row in range(7):
+                for col in range(5):
+                    if glyph[row][col] == '1':
+                        self.rect(cx + col * scale, y + row * scale,
+                                  scale, scale, color)
             cx += 6 * scale
-        return cx - x
+        return cx
 
-    def draw_text_centered(self, cx, y, text, scale, color):
-        w = text_width(text, scale)
-        self.draw_text(cx - w // 2, y, text, scale, color)
+    def text_w(self, s, scale):
+        return len(s) * 6 * scale - scale
 
-    def draw_para(self, x, y, text, scale, color, max_width, leading=None):
-        if leading is None:
-            leading = 9 * scale
-        for line in wrap_text(text, scale, max_width):
-            self.draw_text(x, y, line, scale, color)
-            y += leading
-        return y
+    def center(self, y, s, scale, color, x0=0, x1=None):
+        x1 = self.w if x1 is None else x1
+        x = x0 + (x1 - x0 - self.text_w(s, scale)) // 2
+        return self.text(x, y, s, scale, color)
 
 
-def png_bytes(canvas):
-    def chunk(kind, data):
-        out = struct.pack(">I", len(data)) + kind + data
-        out += struct.pack(">I", zlib.crc32(kind + data) & 0xFFFFFFFF)
-        return out
-
-    raw = bytearray()
-    stride = canvas.w * 3
-    for y in range(canvas.h):
-        raw.append(0)
-        raw += canvas.px[y * stride:(y + 1) * stride]
-    ihdr = struct.pack(">IIBBBBB", canvas.w, canvas.h, 8, 2, 0, 0, 0)
-    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr)
-            + chunk(b"IDAT", zlib.compress(bytes(raw), 9))
-            + chunk(b"IEND", b""))
-
-
-# ---------------------------------------------------------------- layout
-M = 30                      # page margin
-CW = W - 2 * M              # content width
+def wrap(canvas, text, max_w, scale):
+    """Greedy word wrap; returns list of lines that fit max_w px."""
+    lines, cur = [], ""
+    for word in text.split(" "):
+        trial = word if not cur else cur + " " + word
+        if canvas.text_w(trial, scale) <= max_w:
+            cur = trial
+        else:
+            if cur:
+                lines.append(cur)
+            cur = word
+    if cur:
+        lines.append(cur)
+    return lines
 
 
-def draw_globe(cv, x, y, size, color):
-    cx, cy, r = x + size // 2, y + size // 2, size // 2 - 4
-    cv.circle(cx, cy, r, color)
-    cv.ellipse(cx, cy, r, r // 3, color)          # equator
-    cv.ellipse(cx, cy, r // 3, r, color)          # meridian
-    cv.ellipse(cx, cy, int(r * 0.85), r, color)   # outer meridian
-    for frac, rr in ((-0.55, None), (0.55, None)):
-        yy = int(cy + frac * r)
-        half = int(math.sqrt(max(0, r * r - (yy - cy) ** 2)))
-        cv.hline(cx - half, yy, 2 * half, color)
-    # Benghazi marker on the Mediterranean
-    bx, by = cx + int(r * 0.45), cy - int(r * 0.18)
-    cv.disc(bx, by, 5, RED)
-    cv.circle(bx, by, 9, RED)
-    cv.draw_text(bx - 24, by + 13, "Benghazi", 1, RED)
+def draw_globe(cv, cx, cy, r):
+    cv.circle(cx, cy, r, BLUE)
+    cv.circle(cx, cy, r - 1, BLUE)
+    # Equator and tropics.
+    cv.ellipse(cx, cy, r, int(r * 0.28), BLUE)
+    cv.ellipse(cx, cy, r, int(r * 0.62), BLUE)
+    # Meridians.
+    cv.ellipse(cx, cy, int(r * 0.28), r, BLUE)
+    cv.ellipse(cx, cy, int(r * 0.62), r, BLUE)
+    cv.vline(cx, cy - r, 2 * r, BLUE)
+    cv.hline(cx - r, cy, 2 * r, BLUE)
+    # Land dots: a few small blocks suggesting continents.
+    for dx, dy in ((-38, -42), (-30, -30), (18, -48), (34, -28), (-52, 22),
+                   (8, 34), (44, 8), (-8, -58)):
+        cv.rect(cx + dx, cy + dy, 9, 6, RED)
 
 
-def story(cv, x, y, width, kicker, head, body):
-    cv.draw_text(x, y, kicker, 2, RED)
-    y += 18
-    y = cv.draw_para(x, y, head, 3, INK, width, leading=24)
-    y += 5
-    cv.hline(x, y, 46, RED, 3)
-    y += 8
-    y = cv.draw_para(x, y, body, 2, INK, width, leading=16)
+def story(cv, x, y, w, kicker, headline, body):
+    cv.text(x, y, kicker, 2, RED)
+    y += 20
+    for line in wrap(cv, headline, w, 3):
+        cv.text(x, y, line, 3, INK)
+        y += 26
+    y += 4
+    for line in wrap(cv, body, w, 2):
+        cv.text(x, y, line, 2, INK)
+        y += 16
     return y
 
 
-def draw_page():
+def build():
     cv = Canvas(W, H, PAPER)
-    # frame
-    cv.rect(0, 0, W, 4, INK)
-    cv.rect(0, H - 4, W, 4, INK)
+    # Double border.
+    cv.rect(0, 0, W, 3, INK)
+    cv.rect(0, H - 3, W, 3, INK)
+    cv.rect(0, 0, 3, H, INK)
+    cv.rect(W - 3, 0, 3, H, INK)
+    cv.rect(10, 10, W - 20, 2, INK)
+    cv.rect(10, H - 12, W - 20, 2, INK)
 
-    # ---- masthead
-    y = 26
-    cv.draw_text_centered(W // 2, y, "THE WORLD TODAY", 6, INK)
-    y += 48
-    cv.hline(M, y, CW, INK, 3)
-    y += 6
-    cv.hline(M, y, CW, INK, 1)
-    y += 10
-    cv.draw_text_centered(W // 2, y, "TUESDAY, 24 NOVEMBER 2026", 3, NAVY)
-    y += 22
-    cv.draw_text(M, y, "ONE DAY. THE WHOLE WORLD.", 2, GREY)
-    right = "WORLD EDITION"
-    cv.draw_text(W - M - text_width(right, 2), y, right, 2, GREY)
-    y += 18
-    cv.hline(M, y, CW, INK, 2)
-    y += 12
+    # Masthead.
+    cv.center(26, "THE WORLD TODAY", 7, INK)
+    cv.hline(36, 108, W - 72, INK, 3)
+    cv.center(120, "WEDNESDAY, 25 NOVEMBER 2026", 3, RED)
+    cv.center(148, "One day's news from every corner of the globe", 2, GREY)
+    cv.hline(36, 172, W - 72, INK, 2)
 
-    # ---- lead story
-    lead_top = y
-    cv.draw_text(M, y, "WAR AT SEA  --  LIBYA", 2, RED)
-    y += 22
-    cv.draw_text(M, y, "UKRAINE SINKS", 6, INK)
-    y += 46
-    cv.draw_text(M, y, "RUSSIAN WARSHIP", 6, INK)
-    y += 46
-    cv.draw_text(M, y, "OFF LIBYA", 6, INK)
-    y += 46
-    sub = ("Kyiv said on Monday that seven sea drones sank the corvette "
-           "Merkury in Benghazi port, destroying a Ka-27 helicopter on "
-           "board. The cargo ship MV Angara was also hit. Libyan officials "
-           "said at least 10 crew were killed.")
-    y = cv.draw_para(M, y, sub, 2, INK, 620, leading=16)
-    lead_bottom = max(y + 8, lead_top + 230)
-    # globe box on the right of the lead
-    gx, gy = W - M - 300, lead_top - 4
-    box_h = lead_bottom - gy
-    cv.rect(gx, gy, 300, box_h, LIGHT)
-    cv.rect(gx, gy, 300, 2, NAVY)
-    cv.rect(gx, gy + box_h - 2, 300, 2, NAVY)
-    draw_globe(cv, gx + 62, gy + 10, 168, NAVY)
-    cv.draw_text_centered(gx + 150, gy + box_h - 36, "THE WAR REACHES", 2, NAVY)
-    cv.draw_text_centered(gx + 150, gy + box_h - 20, "THE MEDITERRANEAN", 2, NAVY)
-    y = lead_bottom + 12
-    cv.hline(M, y, CW, INK, 2)
-    y += 14
+    # Lead headline.
+    cv.text(40, 190, "KYIV SINKS RUSSIAN WARSHIP", 4, INK)
+    cv.text(40, 224, "OFF LIBYA; MOSCOW HITS BACK", 4, INK)
+    cv.hline(40, 262, 640, RED, 2)
 
-    # ---- three columns of stories, two rows
-    col_w = (CW - 2 * 20) // 3
-    xs = [M, M + col_w + 20, M + 2 * (col_w + 20)]
-    stories = [
-        ("TECH  --  NVIDIA", "HUANG IS BACK AT NVIDIA",
-         "Nvidia's board voted unanimously on Monday to reinstate Jensen "
-         "Huang as chief executive. Shares soared 31% to $165.05, "
-         "adding about $952bn in value."),
-        ("TECH  --  AI SAFETY", "STATES SUE MUSK OVER GROK IMAGES",
-         "Virginia and Oregon sued Musk companies on Monday, saying "
-         "Grok's 'spicy mode' let users turn photos into sexualised "
-         "images, including of children. The suits seek damages."),
-        ("WAR  --  UKRAINE", "AT LEAST 15 KILLED AROUND KYIV",
-         "Russian strikes on the Kyiv region killed at least 15 people, "
-         "officials said. A drone hit a block of flats in Dymer, "
-         "killing 11; a supermarket strike in Vyshneve killed three."),
-        ("JUSTICE  --  LONDON", "GTA VI HACKER JAILED, THEN FREED",
-         "Arion Kurtaj, 21, got seven years at Woolwich Crown Court on "
-         "Monday for the 2022 Rockstar hack. Time already served meant "
-         "he walked free on licence the same day."),
-        ("AMERICA  --  WASHINGTON", "TRUMP ORDERS EXECUTIONS SPED UP",
-         "President Trump signed a directive on Monday to expedite "
-         "federal executions. It also seeks the death penalty for child "
-         "murder and for rapists and traffickers who kill."),
-        ("DIPLOMACY  --  BARBADOS", "UN CHIEF SEEKS AI SAFETY PACT",
-         "UN chief Antonio Guterres called on Monday, at an AI safety "
-         "summit in Barbados, for states to agree within a year on a "
-         "global framework to manage AI risks, with independent "
-         "oversight."),
+    # Lead body (left) + globe (right).
+    lead = (
+        "Ukraine said its sea drones sank the Russian corvette Merkury at "
+        "Benghazi, Libya, on 22 November, and hit the arms cargo ship Angara. "
+        "Russia answered overnight with one of the war's biggest air attacks: "
+        "about 100 missiles and 400 drones. Three bridges in Kyiv were hit "
+        "and three people killed; two died in Odesa."
+    )
+    y = 276
+    for line in wrap(cv, lead, 640, 2):
+        cv.text(40, y, line, 2, INK)
+        y += 17
+    draw_globe(cv, 848, 320, 88)
+
+    # Section header.
+    cv.hline(36, 420, W - 72, INK, 2)
+    cv.center(432, "THE DAY IN BRIEF", 3, INK)
+    cv.hline(36, 462, W - 72, INK, 1)
+
+    cols = [(36, 301), (361, 301), (686, 301)]
+    row1 = [
+        ("MARKETS", "HUANG'S COMEBACK COOLS",
+         "Nvidia shares soared 31% on Monday as Jensen Huang returned as "
+         "chief executive, adding $952bn in value. On Tuesday the rally "
+         "faded, with shares down over 5%."),
+        ("CLIMATE", "CLIMATE TALKS END WITH NO DEAL",
+         "COP31 closed in Antalya, Turkiye, on 22 November with no final "
+         "pact. Fossil-fuel phase-out language and a $120bn adaptation "
+         "target were dropped. Talks move to COP32 in 2027."),
+        ("MIDDLE EAST", "HOUTHIS STRIKE RIYADH AGAIN",
+         "Yemen's Houthis hit Riyadh's tallest skyscraper for a second "
+         "time in under a week, injuring 11 people. A Saudi-led coalition "
+         "answered with strikes on Yemen's Hodeidah port."),
     ]
-    row_y = y
-    row1_end = 0
-    for i in range(3):
-        end = story(cv, xs[i], row_y, col_w, *stories[i])
-        row1_end = max(row1_end, end)
-    row_y = row1_end + 12
-    row2_end = 0
-    for i in range(3, 6):
-        end = story(cv, xs[i - 3], row_y, col_w, *stories[i])
-        row2_end = max(row2_end, end)
-    y = row2_end + 6
-    for vx in (xs[1] - 10, xs[2] - 10):
-        cv.vline(vx, lead_bottom + 26, y - lead_bottom - 34, GREY)
-    cv.hline(M, y, CW, INK, 2)
-    y += 12
-
-    # ---- in brief
-    cv.draw_text(M, y, "IN BRIEF", 2, RED)
-    y += 18
-    briefs = [
-        "INDIA-EU: Trade pact likely signed 16 Dec in Brussels; in force by mid-2027.",
-        "THANKSGIVING: Storms on both US coasts threaten holiday travel for millions.",
-        "INDONESIA: Prabowo names Amran Sulaiman and Sugiono as VP candidates.",
-        "MARKETS: Nvidia gave back about 5% on Tuesday after Monday's 31% surge.",
+    row2 = [
+        ("SPACE", "FIRST PAKISTANI IN SPACE",
+         "China launched Shenzhou-24 on 25 November carrying the first "
+         "Pakistani astronaut, Zeeshan Ali, to its space station. Pakistan "
+         "hailed the flight as a milestone."),
+        ("GAZA", "HAMAS SECURITY CHIEF KILLED",
+         "Israeli air strikes on Gaza City killed seven people, including "
+         "Hamas internal security director Naim Abu Nahal, Palestinian "
+         "officials said, despite a ceasefire."),
+        ("WASHINGTON", "TRUMP HONOURS GIULIANI",
+         "President Donald Trump awarded Rudy Giuliani the Medal of "
+         "Freedom, the highest US civilian honour, praising the former New "
+         "York mayor as a staunch ally since 9/11."),
     ]
-    for b in briefs:
-        y = cv.draw_para(M + 14, y, b, 2, INK, CW - 14, leading=16)
-        y += 2
-    y += 4
-    cv.hline(M, y, CW, INK, 1)
-    y += 10
-    cv.draw_text_centered(
-        W // 2, y,
-        "THE WORLD TODAY  --  TUESDAY, 24 NOVEMBER 2026  --  STORIES AS REPORTED ON 24 NOVEMBER 2026",
-        1, GREY)
+    for (x, w), (kick, head, body) in zip(cols, row1):
+        story(cv, x, 478, w, kick, head, body)
+    cv.hline(36, 690, W - 72, LIGHT, 1)
+    for (x, w), (kick, head, body) in zip(cols, row2):
+        story(cv, x, 704, w, kick, head, body)
+    # Thin vertical rules between columns.
+    for vx in (349, 674):
+        cv.vline(vx, 478, 420, LIGHT, 1)
+
+    # Bottom strip: weather and disasters.
+    cv.hline(36, 916, W - 72, INK, 2)
+    cv.text(40, 928, "WEATHER & DISASTERS", 2, RED)
+    weather = (
+        "Orange flood alerts in south-east France, up to 150 mm of rain. "
+        "Hanoi gas blast kills six; Turkish helicopter crash kills five; "
+        "UAE bus crash kills 13."
+    )
+    y = 950
+    for line in wrap(cv, weather, 944, 2):
+        cv.text(40, y, line, 2, INK)
+        y += 17
+
+    # Footer.
+    cv.text(40, 994, "All stories as reported on Wednesday, 25 November 2026.",
+            1, GREY)
     return cv
 
 
-def resolve_output():
-    if len(sys.argv) > 1:
-        return sys.argv[1]
-    out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
-    if out_dir:
-        return os.path.join(out_dir, "entry.png")
-    here = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(here, "entry.png")
+def write_png(cv, path):
+    raw = bytearray()
+    for y in range(cv.h):
+        raw.append(0)
+        raw += cv.px[y * cv.w * 3:(y + 1) * cv.w * 3]
+    comp = zlib.compress(bytes(raw), 9)
+
+    def chunk(tag, data):
+        c = struct.pack(">I", len(data)) + tag + data
+        return c + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+
+    png = b"\x89PNG\r\n\x1a\n"
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", cv.w, cv.h, 8, 2, 0, 0, 0))
+    png += chunk(b"IDAT", comp)
+    png += chunk(b"IEND", b"")
+    with open(path, "wb") as f:
+        f.write(png)
+    os.chmod(path, 0o644)
+    with open(path, "rb") as f:
+        data = f.read()
+    print("wrote %s: %d bytes sha256=%s" % (path, len(data),
+                                            hashlib.sha256(data).hexdigest()))
+    return data
 
 
 def main():
-    out = resolve_output()
-    data = png_bytes(draw_page())
-    os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
-    with open(out, "wb") as f:
-        f.write(data)
-    os.chmod(out, 0o644)
-    with open(out, "rb") as f:
-        back = f.read()
-    print("wrote %s" % out)
-    print("size %d bytes" % len(back))
-    print("sha256 %s" % hashlib.sha256(back).hexdigest())
+    if len(sys.argv) > 1:
+        out = sys.argv[1]
+    elif os.environ.get("MAKEFUN_OUTPUT_DIR"):
+        out = os.path.join(os.environ["MAKEFUN_OUTPUT_DIR"], "entry.png")
+    else:
+        out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "entry.png")
+    cv = build()
+    write_png(cv, out)
 
 
 if __name__ == "__main__":
